@@ -1,0 +1,172 @@
+# Настройки MVP-агента поиска событий.
+# Относительные пути (state_path, log_path, lock_path) считаются от каталога этого файла.
+
+# Модель для litellm. Kimi Code (подписка) отдаёт K2.8 Preview под id kimi-for-coding.
+# Доступ: API-ключ из консоли Kimi Code + OPENAI_API_BASE в .env (см. .env.example).
+# Другие id: kimi-for-coding-highspeed (K2.7 Code Highspeed), k3, k3-256k, k3.1-pro.
+model: openai/kimi-for-coding
+# Уровень размышлений для Kimi: low / high / max. По умолчанию у kimi-for-coding max —
+# для извлечения JSON это лишние секунды и квота. Убрать строку, если модель не поддерживает.
+reasoning_effort: low
+
+timezone: Asia/Vladivostok
+region: ru-ru
+
+cities:
+  - Владивосток
+
+resources:
+  - domain: visit-primorye.ru
+    queries:
+      - афиша мероприятий Владивосток
+      - концерт Владивосток
+      - фестиваль Владивосток
+
+  - domain: gorodzovet.ru
+    queries:
+      - концерт Владивосток
+      - выставка Владивосток
+      - мастер-класс Владивосток
+    watch_urls:
+      - https://gorodzovet.ru/vladivostok/
+    # ddgs по site:gorodzovet.ru отдаёт события всех городов, поэтому режем по пути.
+    url_contains:
+      - /vladivostok/
+
+  - domain: afishagorodov.ru
+    queries:
+      - концерт Владивосток
+      - спектакль Владивосток
+      - стендап Владивосток
+    watch_urls:
+      - https://afishagorodov.ru/vladivostok/
+
+  # Афиши, где площадка указана прямо в списке рядом с событием.
+  - domain: ticketland.ru
+    queries:
+      - спектакль Владивосток
+      - концерт Владивосток
+    watch_urls:
+      - https://vladivostok.ticketland.ru/spectacle/
+    # Домен общий для всех городов: режем всё, что не Владивосток.
+    url_contains:
+      - vladivostok.ticketland.ru
+
+  - domain: kassir.ru
+    queries:
+      - концерт Владивосток
+      - спектакль Владивосток
+    watch_urls:
+      - https://vl.kassir.ru/
+    # kassir.ru раздаёт города поддоменами: только vl.
+    url_contains:
+      - //vl.kassir.ru
+
+general_queries:
+  # Новости за сутки: только анонсы, поэтому фразы с "анонс"/"премьера".
+  # Проверено на ddgs: новостная выдача по Владивостоку бедная, эти формулировки
+  # дают хоть что-то; остальное добирает text-ветка.
+  news:
+    - концерт {city}
+    - афиша {city}
+    - премьера {city}
+    - фестиваль {city}
+
+  # Текстовый поиск за неделю: по категориям, по площадкам и по типовым запросам.
+  text:
+    - концерт {city}
+    - концерт {city} филармония
+    - фестиваль {city}
+    - спектакль {city}
+    - спектакль {city} драмтеатр
+    - театр {city}
+    - выставка {city} 2026
+    - выставка {city} музей
+    - выставка {city} галерея
+    - лекция {city} музей
+    - мастер-класс {city} обучение
+    - тренинг {city}
+    - митап {city}
+    - конференция {city} форум
+    - стендап {city} клуб
+    - квиз {city} игра
+    - экскурсия {city} музей
+    - кинопоказ {city}
+    - мероприятия для детей {city}
+    - детская афиша {city}
+    - афиша {city}
+    - афиша событий {city} на неделю
+    - куда сходить {city}
+    - куда пойти {city}
+    - досуг {city}
+    - события {city}
+    - отдых {city} выходные
+    - бесплатные мероприятия {city}
+    - мероприятия Приморского края
+
+# Сколько страниц за прогон максимум уходит в LLM.
+pages_per_run: 25
+# Сколько символов текста страницы отправлять модели.
+page_chars: 12000
+# Сколько страниц качать и отправлять в LLM одновременно (I/O, не CPU).
+workers: 6
+# Сколько поисковых запросов выполнять одновременно. Выше 3 — риск лимитов ddgs.
+search_workers: 3
+
+blocked_domains:
+  # Соцсети и видео: страницу не прочитать, события внутри.
+  - vk.com
+  - vkvideo.ru
+  - ok.ru
+  - youtube.com
+  - rutube.ru
+  - t.me
+  - telega.fm
+  # Афиши на JavaScript: ddgs отдаёт пустой текст, страницы тратят слоты впустую.
+  - afisha.ru
+  - timepad.ru
+  # Объявления и магазины.
+  - avito.ru
+  - ozon.ru
+  - wildberries.ru
+  # По решению заказчика vl.ru не используем.
+  - vl.ru
+  # Справочники и энциклопедии: событий с датами не бывает.
+  - ru.wikipedia.org
+  - jsprav.ru
+  # Новостные ленты: прошедшие события и репортажи вместо анонсов.
+  - mk.ru
+  - aif.ru
+  - gazeta.ru
+  - iz.ru
+
+# Общий поиск (general_queries) в каждом прогоне, который запускает ручка POST /runs.
+general: true
+
+# Жёсткий лимит прогона, секунд. По истечении отдаём то, что успели (status=partial).
+run_timeout: 900
+# Таймаут одного вызова LLM, секунд, и число повторов при сетевых сбоях.
+llm_timeout: 90
+# Афиша отдаёт до 40 событий — вызов дольше, поэтому таймаут больше.
+llm_timeout_listing: 240
+llm_retries: 1
+# Сколько событий максимум берём с афиши и с карточки одного события.
+max_events_listing: 40
+max_events_article: 10
+
+# Маленькое состояние между прогонами (JSON): отданные события и прочитанные страницы.
+state_path: data/state.json
+# Через сколько дней забывать прочитанные страницы (события чистятся после даты окончания).
+state_ttl_days: 30
+# После скольких неудач подряд страница уходит в карантин и на сколько дней.
+quarantine_after: 3
+quarantine_days: 7
+# Сколько последних прогонов держать в памяти для GET /runs/{id}.
+history_size: 20
+
+log_path: logs/event-agent.log
+lock_path: logs/event-agent.lock
+
+server:
+  host: 127.0.0.1
+  port: 8000
