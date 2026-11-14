@@ -258,6 +258,99 @@ POST /runs → Runner (один активный прогон, фоновый п
 Структура кода (`src/event_agent/`): `config.py`, `deadline.py`, `search.py`, `llm.py`,
 `state.py`, `pipeline.py`, `runner.py`, `schemas.py`, `api.py`, `main.py`.
 
+## Docker и деплой
+
+### Файлы окружения
+
+- `.env` — секреты и настройки клиентов приложения (`OPENAI_API_KEY`, `OPENAI_API_BASE`, при
+  необходимости proxy). Compose передаёт этот файл в контейнер через `env_file`.
+- `deploy.env` — не секретные параметры образа, HTTP-порта, ресурсов и SSH-деплоя. Эти значения
+  используются для подстановок Compose; SSH- и registry-настройки скрипта в контейнер не передаются.
+
+Оба файла игнорируются Git и Docker build context. В репозитории хранятся только `.env.example` и
+`deploy.env.example`. Рабочие параметры поиска остаются в `config.yaml`.
+
+```bash
+cp .env.example .env                    # заполнить ключ
+cp deploy.env.example deploy.env        # заполнить параметры площадки
+chmod 600 .env
+```
+
+### Локальный запуск
+
+```bash
+docker build -t event-agent:local .
+EVENT_AGENT_IMAGE=event-agent EVENT_AGENT_TAG=local PULL_POLICY=never \
+  docker compose --env-file deploy.env up -d
+curl --fail http://127.0.0.1:8000/health
+docker compose --env-file deploy.env logs -f event-agent
+```
+
+Состояние и файловые логи сохраняются в named volumes `event-agent-data` и `event-agent-logs`.
+`docker compose down` их сохраняет; `down -v` удалит состояние дедупликации.
+
+### Деплой на Linux-сервер
+
+Нужны Docker с buildx локально, Docker Engine и Compose plugin на сервере, SSH-доступ и право
+пользователя `DEPLOY_USER` запускать Docker. Локально и на сервере выполнить `docker login ghcr.io`.
+Токен registry в `deploy.env` не записывать. Для ARM-сервера изменить `BUILD_PLATFORM` на
+`linux/arm64`.
+
+Перед первым деплоем отдельно передать секреты (пример для значений из `deploy.env.example`):
+
+```bash
+ssh deploy@server.example.com 'install -d -m 700 /opt/event-agent'
+scp .env deploy@server.example.com:/opt/event-agent/.env
+ssh deploy@server.example.com 'chmod 600 /opt/event-agent/.env'
+```
+
+Затем заполнить `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH` и другие параметры в `deploy.env`:
+
+```bash
+./scripts/deploy.sh
+```
+
+Скрипт собирает Linux-образ, публикует его в GHCR с тегом короткого Git SHA (или
+`EVENT_AGENT_TAG`), копирует на сервер только Compose, `config.yaml` и не секретный `deploy.env`,
+выполняет `pull` и `up -d`, затем ждёт healthy-статуса. Секретный `.env` скрипт не копирует и не
+выводит. Для повторного выката уже опубликованного образа без сборки используется `SKIP_BUILD=1`.
+
+Частые операции на сервере:
+
+```bash
+cd /opt/event-agent
+docker compose --env-file deploy.env ps
+docker compose --env-file deploy.env logs --tail=100 -f event-agent
+curl --fail http://127.0.0.1:8000/health
+
+# Обновить config.yaml и Compose без пересборки того же тега:
+SKIP_BUILD=1 ./scripts/deploy.sh  # запускать локально, не на сервере
+
+# Откат на ранее опубликованный образ (запускать локально):
+EVENT_AGENT_TAG=<previous_git_sha> SKIP_BUILD=1 ./scripts/deploy.sh
+```
+
+Резервная копия состояния делается на сервере; остановка исключает запись во время архивации:
+
+```bash
+cd /opt/event-agent
+docker compose --env-file deploy.env stop event-agent
+docker run --rm -v event-agent_event-agent-data:/data:ro -v "$PWD":/backup \
+  alpine:3.22 tar czf /backup/event-agent-state.tar.gz -C /data .
+docker compose --env-file deploy.env start event-agent
+```
+
+Если изменён `COMPOSE_PROJECT_NAME`, префикс volume в команде backup будет другим; его можно
+посмотреть через `docker volume ls`.
+
+**Сетевой доступ.** По умолчанию `HTTP_BIND=0.0.0.0` публикует порт на всех интерфейсах сервера.
+У API нет авторизации и TLS, поэтому порт нужно ограничить firewall/security group. Для доступа из
+интернета следует использовать reverse proxy с TLS и контролем доступа, а `HTTP_BIND` установить в
+`127.0.0.1`.
+
+Обновление не является zero-downtime: запускается только один экземпляр, во время перезапуска API
+кратко недоступен, а история прогонов в памяти теряется. JSON-состояние на volume сохраняется.
+
 ## Разработка
 
 ```bash

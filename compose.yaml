@@ -1,0 +1,43 @@
+services:
+  event-agent:
+    image: "${EVENT_AGENT_IMAGE:-ghcr.io/pihpohpah/webscraper}:${EVENT_AGENT_TAG:-latest}"
+    pull_policy: "${PULL_POLICY:-always}"
+    env_file:
+      - .env
+    environment:
+      TZ: "${TZ:-Asia/Vladivostok}"
+    command: ["--config", "/app/config.yaml", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-8000}:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - event-agent-data:/app/data
+      - event-agent-logs:/app/logs
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 60s
+    mem_limit: "${MEMORY_LIMIT:-2g}"
+    cpus: "${CPU_LIMIT:-2.0}"
+    pids_limit: ${PIDS_LIMIT:-256}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  event-agent-data:
+  event-agent-logs:

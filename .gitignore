@@ -1,7 +1,12 @@
 .env
+.env.*
+!.env.example
+deploy.env
+!deploy.env.example
 .venv/
 data/
 logs/
+.pytest_cache/
 .ruff_cache/
 __pycache__/
 *.pyc
