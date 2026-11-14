@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
 from event_agent.config import Config
 from event_agent.runner import ExternalLockError, Runner
 from event_agent.schemas import HealthOut, RunOut
+from event_agent.state import STATE_VERSION, State
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(cfg: Config, runner: Runner | None = None) -> FastAPI:
@@ -38,6 +44,25 @@ def create_app(cfg: Config, runner: Runner | None = None) -> FastAPI:
         if record is None:
             raise HTTPException(status_code=404, detail="Run not found")
         return record
+
+    @app.get("/state")
+    def get_state() -> dict[str, Any]:
+        """Содержимое файла состояния: страницы и уже отданные события.
+
+        Файл пишется атомарно (os.replace) только в конце прогона, поэтому чтение во время
+        прогона безопасно и отдаёт состояние на конец предыдущего.
+        """
+        try:
+            data = json.loads(cfg.state_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return State().to_dict()
+        except (OSError, ValueError) as exc:
+            logger.warning("Cannot read state file %s", cfg.state_path, exc_info=exc)
+            raise HTTPException(status_code=503, detail="State file is unreadable") from exc
+        if not isinstance(data, dict) or data.get("version") != STATE_VERSION:
+            logger.warning("State file %s has unknown format", cfg.state_path)
+            raise HTTPException(status_code=503, detail="State file has unknown format")
+        return data
 
     @app.get("/health", response_model=HealthOut)
     def health() -> HealthOut:

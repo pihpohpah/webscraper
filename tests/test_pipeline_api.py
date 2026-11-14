@@ -109,7 +109,24 @@ def test_api_flow(cfg, monkeypatch):
                 break
             time.sleep(0.05)
         assert body2["events"] == []
+        cached = client.get("/state").json()
+        assert len(cached["events"]) == 2 and LISTING in cached["pages"]
     assert cfg.state_path.exists()
+
+
+def test_state_endpoint_before_first_run(cfg):
+    with TestClient(create_app(cfg)) as client:
+        assert client.get("/state").json() == {"version": 1, "pages": {}, "events": {}}
+
+
+def test_state_endpoint_rejects_broken_file(cfg):
+    cfg.state_path.parent.mkdir(parents=True, exist_ok=True)
+    with TestClient(create_app(cfg)) as client:
+        cfg.state_path.write_text("{oops", encoding="utf-8")
+        assert client.get("/state").status_code == 503
+        cfg.state_path.write_text('{"version": 999}', encoding="utf-8")
+        assert client.get("/state").status_code == 503
+    assert cfg.state_path.exists()  # файл не переименован в *.corrupt
 
 
 def test_empty_page_goes_to_quarantine_immediately(cfg, monkeypatch):
