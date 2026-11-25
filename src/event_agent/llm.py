@@ -244,7 +244,7 @@ def _call_model(
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
                 ],
-                # Kimi Code принимает только temperature=1; для обычных моделей оставляем 0.
+                # Kimi Code принимает только temperature=1, поэтому передаём, только если задано.
                 **({"temperature": temperature} if temperature is not None else {}),
                 # Kimi Code по умолчанию считает с effort=max: для извлечения JSON это лишние
                 # секунды и квота, поэтому уровень задаётся конфигом.

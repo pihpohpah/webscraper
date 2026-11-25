@@ -1,7 +1,7 @@
 [project]
 name = "event-agent"
 version = "0.1.0"
-description = "MVP-сервис поиска анонсов событий: ddgs + LLM + SQLite"
+description = "Сервис поиска анонсов событий: ddgs + LLM"
 readme = "README.md"
 authors = [
     { name = "shorokhov_kd", email = "shorokhov_kd@farpost.com" }

@@ -42,6 +42,7 @@ resources:
       - https://afishagorodov.ru/vladivostok/
 
   # Афиши, где площадка указана прямо в списке рядом с событием.
+  # primcult.ru проверен: площадок в тексте нет, поэтому не добавлен.
   - domain: ticketland.ru
     queries:
       - спектакль Владивосток
